@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:file_picker/file_picker.dart';
+import '../services/youtube_service.dart';
+import '../services/music_service.dart';
 
 // -----------------------------------------------------------------------------
 // State Models
@@ -12,6 +14,8 @@ class PlayerStateModel {
   final Duration duration;
   final double volume; // 0.0 to 100.0
   final bool isBuffering;
+  final VideoMetadata? currentTrack;
+  final List<VideoMetadata> queue;
 
   const PlayerStateModel({
     this.isPlaying = false,
@@ -19,6 +23,8 @@ class PlayerStateModel {
     this.duration = Duration.zero,
     this.volume = 100.0,
     this.isBuffering = false,
+    this.currentTrack,
+    this.queue = const [],
   });
 
   PlayerStateModel copyWith({
@@ -27,6 +33,9 @@ class PlayerStateModel {
     Duration? duration,
     double? volume,
     bool? isBuffering,
+    VideoMetadata? currentTrack,
+    List<VideoMetadata>? queue,
+    bool clearTrack = false,
   }) {
     return PlayerStateModel(
       isPlaying: isPlaying ?? this.isPlaying,
@@ -34,6 +43,8 @@ class PlayerStateModel {
       duration: duration ?? this.duration,
       volume: volume ?? this.volume,
       isBuffering: isBuffering ?? this.isBuffering,
+      currentTrack: clearTrack ? null : (currentTrack ?? this.currentTrack),
+      queue: queue ?? this.queue,
     );
   }
 }
@@ -50,13 +61,13 @@ final playerProvider = StateNotifierProvider<PlayerNotifier, PlayerStateModel>((
 
 class PlayerNotifier extends StateNotifier<PlayerStateModel> {
   late final Player _player;
+  final MusicService _musicService = MusicService();
 
   PlayerNotifier() : super(const PlayerStateModel()) {
     _init();
   }
 
   Future<void> _init() async {
-    // Determine native or web
     _player = Player();
 
     // Listen to stream updates
@@ -81,14 +92,50 @@ class PlayerNotifier extends StateNotifier<PlayerStateModel> {
     });
   }
 
+  Future<void> playYouTubeTrack(VideoMetadata track) async {
+    try {
+      state = state.copyWith(isBuffering: true, currentTrack: track);
+      final url = await _musicService.getStreamingUrl(track.id);
+      if (url != null) {
+        await _player.open(Media(url));
+      }
+    } catch (e) {
+      // debugPrint('Error playing YouTube track: $e');
+    } finally {
+      if (mounted) state = state.copyWith(isBuffering: false);
+    }
+  }
+
+  void addToQueue(VideoMetadata track) {
+    state = state.copyWith(queue: [...state.queue, track]);
+  }
+
+  Future<void> skipNext() async {
+    if (state.queue.isNotEmpty) {
+      final nextTrack = state.queue.first;
+      final remainingQueue = state.queue.sublist(1);
+      state = state.copyWith(queue: remainingQueue);
+      await playYouTubeTrack(nextTrack);
+    }
+  }
+
   Future<void> playFile() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.audio);
 
     if (result != null && result.files.single.path != null) {
       final path = result.files.single.path!;
+      final name = result.files.single.name;
+
+      final track = VideoMetadata(
+        id: path,
+        title: name,
+        author: 'Local File',
+        thumbnailUrl: '',
+        duration: Duration.zero,
+      );
+
+      state = state.copyWith(currentTrack: track);
       await _player.open(Media(path));
-      // Auto-play is handled by player configuration usually, but we ensure it
-      // _player.play(); // media_kit usually auto-plays on open
     }
   }
 
@@ -98,7 +145,6 @@ class PlayerNotifier extends StateNotifier<PlayerStateModel> {
   Future<void> playOrPause() => _player.playOrPause();
 
   Future<void> seek(Duration position) async {
-    // Optimistic update to prevent flickering
     state = state.copyWith(position: position);
     await _player.seek(position);
   }
@@ -108,6 +154,7 @@ class PlayerNotifier extends StateNotifier<PlayerStateModel> {
   @override
   void dispose() {
     _player.dispose();
+    _musicService.dispose();
     super.dispose();
   }
 }
