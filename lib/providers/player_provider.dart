@@ -96,7 +96,8 @@ class PlayerNotifier extends StateNotifier<PlayerStateModel> {
     try {
       state = state.copyWith(isBuffering: true, currentTrack: track);
       final url = await _musicService.getStreamingUrl(track.id);
-      if (url != null) {
+      if (url != null && url.isNotEmpty) {
+        await _player.stop();
         await _player.open(Media(url));
       }
     } catch (e) {
@@ -119,23 +120,30 @@ class PlayerNotifier extends StateNotifier<PlayerStateModel> {
     }
   }
 
+  Future<void> skipPrevious() async {
+    // MediaKit handles previous if in a playlist, but for our custom queue
+    // we would need a history list. For now, just restart the current track.
+    await _player.seek(Duration.zero);
+  }
+
+  Future<void> playLocalVideo(String path, String title) async {
+    final track = VideoMetadata(
+      id: path,
+      title: title,
+      author: 'Local File',
+      thumbnailUrl: '',
+      duration: Duration.zero,
+    );
+
+    state = state.copyWith(currentTrack: track);
+    await _player.open(Media(path));
+  }
+
   Future<void> playFile() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.audio);
 
     if (result != null && result.files.single.path != null) {
-      final path = result.files.single.path!;
-      final name = result.files.single.name;
-
-      final track = VideoMetadata(
-        id: path,
-        title: name,
-        author: 'Local File',
-        thumbnailUrl: '',
-        duration: Duration.zero,
-      );
-
-      state = state.copyWith(currentTrack: track);
-      await _player.open(Media(path));
+      await playLocalVideo(result.files.single.path!, result.files.single.name);
     }
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:file_picker/file_picker.dart';
 import '../providers/settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -68,12 +69,16 @@ class SettingsScreen extends ConsumerWidget {
                 _buildSettingItem(
                   'Download Location',
                   settings.downloadLocation.isEmpty
-                      ? 'Not set'
+                      ? 'Default (Documents)'
                       : settings.downloadLocation,
                   IconButton(
                     icon: const Icon(Icons.folder_open, color: accentRed),
                     onPressed: () async {
-                      // Logic for folder picking could be added here
+                      String? selectedDirectory =
+                          await FilePicker.platform.getDirectoryPath();
+                      if (selectedDirectory != null) {
+                        settingsNotifier.setDownloadLocation(selectedDirectory);
+                      }
                     },
                   ),
                 ),

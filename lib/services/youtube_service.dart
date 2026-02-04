@@ -43,7 +43,11 @@ class YouTubeService {
   Future<String?> getAudioStreamUrl(String videoId) async {
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(videoId);
-      final audioStream = manifest.audioOnly.withHighestBitrate();
+      final audioStream = manifest.audioOnly.firstOrNull ??
+          manifest.muxed
+              .where((s) => s.videoQuality.toString().contains('360p'))
+              .firstOrNull ??
+          manifest.muxed.withHighestBitrate();
       return audioStream.url.toString();
     } catch (e) {
       // debugPrint('YouTube audio stream error: $e');

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 
 // Providers
@@ -11,7 +12,7 @@ import 'providers/app_state_provider.dart';
 import 'providers/player_provider.dart';
 import 'providers/settings_provider.dart';
 import 'services/music_service.dart';
-// import 'services/youtube_service.dart'; // Using via MusicService or exported elsewhere
+import 'services/youtube_service.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'providers/video_player_provider.dart';
 import 'providers/favorites_provider.dart' as fav;
@@ -415,11 +416,12 @@ class MainScreen extends ConsumerWidget {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.search, color: textGrey, size: 20),
-                      const SizedBox(width: 10),
+                      Icon(Icons.search, color: textGrey, size: 18),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: TextField(
-                          style: GoogleFonts.inter(color: Colors.white),
+                          style: GoogleFonts.inter(
+                              color: Colors.white, fontSize: 13),
                           onSubmitted: (value) async {
                             if (value.isNotEmpty) {
                               final musicService = MusicService();
@@ -439,18 +441,18 @@ class MainScreen extends ConsumerWidget {
                             }
                           },
                           decoration: InputDecoration(
-                            hintText: 'Search music or video...',
-                            hintStyle: GoogleFonts.inter(color: textGrey),
+                            hintText: 'Search...',
+                            hintStyle: GoogleFonts.inter(
+                                color: textGrey, fontSize: 13),
                             border: InputBorder.none,
                           ),
                         ),
                       ),
-                      Icon(Icons.mic_none, color: textGrey, size: 20),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(width: 20),
+              const SizedBox(width: 15),
               InkWell(
                 onTap: () {
                   if (!authState.isAuthenticated) {
@@ -463,45 +465,78 @@ class MainScreen extends ConsumerWidget {
                 child: Row(
                   children: [
                     CircleAvatar(
-                      radius: 18,
+                      radius: 16,
                       backgroundColor: accentRed,
                       backgroundImage: authState.user?.photoUrl != null
                           ? NetworkImage(authState.user!.photoUrl!)
                           : null,
                       child: authState.user?.photoUrl == null
-                          ? const Icon(Icons.person, color: Colors.white)
+                          ? const Icon(Icons.person,
+                              color: Colors.white, size: 18)
                           : null,
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     Text(
                       authState.isAuthenticated
-                          ? 'Hey, ${authState.user?.displayName ?? 'User'}'
+                          ? (authState.user?.displayName?.split(' ').first ??
+                              'User')
                           : 'Sign In',
                       style: GoogleFonts.inter(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
+                        fontSize: 13,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              const Icon(Icons.notifications_none, color: Colors.white),
             ],
           ),
-          const SizedBox(height: 30),
+          const SizedBox(height: 20),
 
-          // Content based on category and mode
+          // Main Scrollable Area
           Expanded(
-            child: _buildCategoryContent(
-              context,
-              ref,
-              appState,
-              playerState,
-              authState,
-              bgDark,
-              accentRed,
-              textGrey,
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                // Now Playing Section
+                Consumer(
+                  builder: (context, ref, child) {
+                    final appState = ref.watch(appStateProvider);
+                    final playerState = ref.watch(playerProvider);
+                    final videoState = ref.watch(videoPlayerProvider);
+                    final heroTrack = (appState.mode == AppMode.video
+                            ? videoState.currentVideo
+                            : playerState.currentTrack) ??
+                        appState.heroTrack;
+
+                    if (heroTrack != null) {
+                      return _buildNowPlayingSection(
+                          context,
+                          ref,
+                          heroTrack,
+                          accentRed,
+                          textGrey,
+                          appState.mode == AppMode.video,
+                          videoState,
+                          appState.selectedCategory);
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+                const SizedBox(height: 20),
+                // Content based on category and mode
+                _buildCategoryContent(
+                  context,
+                  ref,
+                  appState,
+                  playerState,
+                  authState,
+                  bgDark,
+                  accentRed,
+                  textGrey,
+                ),
+              ],
             ),
           ),
         ],
@@ -527,21 +562,194 @@ class MainScreen extends ConsumerWidget {
             : _buildVideoContent(
                 context, ref, playerState, bgDark, accentRed, textGrey);
       case 'Library':
-        return _buildPlaceholderContent(
-            'Library', Icons.library_music_outlined, textGrey);
+        return _buildLibraryContent(context, ref, accentRed, textGrey);
       case 'Stream':
-        return _buildPlaceholderContent(
-            'Live Streams', Icons.wifi_tethering, textGrey);
+        return _buildStreamContent(context, ref, appState, accentRed, textGrey);
       case 'Liked Track':
       case 'Liked Tracks':
         return _buildFavoritesContent(context, ref, accentRed, textGrey);
       case 'Downloads':
-        return _buildPlaceholderContent(
-            'Downloads', Icons.download_done_outlined, textGrey);
+        return _buildDownloadsContent(context, ref, accentRed, textGrey);
       default:
         return _buildPlaceholderContent(
             appState.selectedCategory, Icons.folder_open, textGrey);
     }
+  }
+
+  Widget _buildStreamContent(
+    BuildContext context,
+    WidgetRef ref,
+    AppState appState,
+    Color accentRed,
+    Color textGrey,
+  ) {
+    return Column(
+      children: [
+        _buildSectionHeader('Live Stream & Search', accentRed),
+        const SizedBox(height: 20),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextField(
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Search for live streams or music...',
+              hintStyle: TextStyle(color: textGrey),
+              prefixIcon: Icon(Icons.search, color: textGrey),
+              filled: true,
+              fillColor: Colors.white12,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            onSubmitted: (query) {
+              ref.read(appStateProvider.notifier).searchMusic(query);
+            },
+          ),
+        ),
+        const SizedBox(height: 20),
+        if (appState.isSearching)
+          const Center(
+              child: CircularProgressIndicator(color: Color(0xFFFF003C)))
+        else if (appState.searchResults.isEmpty)
+          Expanded(
+              child: _buildPlaceholderContent(
+                  'Explore YouTube', Icons.explore_outlined, textGrey))
+        else
+          Expanded(
+            child: ListView.builder(
+              itemCount: appState.searchResults.length,
+              itemBuilder: (context, index) {
+                final track = appState.searchResults[index];
+                return ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      track.thumbnailUrl,
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  title: Text(track.title,
+                      style: const TextStyle(color: Colors.white)),
+                  subtitle:
+                      Text(track.author, style: TextStyle(color: textGrey)),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.play_circle_fill,
+                        color: Color(0xFFFF003C)),
+                    onPressed: () {
+                      ref.read(playerProvider.notifier).playYouTubeTrack(track);
+                    },
+                  ),
+                  onTap: () {
+                    ref.read(playerProvider.notifier).playYouTubeTrack(track);
+                  },
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildLibraryContent(
+      BuildContext context, WidgetRef ref, Color accentRed, Color textGrey) {
+    // Show a mix of local files and recently played
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('Your Library', accentRed),
+        const SizedBox(height: 20),
+        Expanded(
+          child: ListView(
+            children: [
+              _buildLibraryItem(
+                  'Local Audio', Icons.audio_file_outlined, textGrey, () async {
+                await ref.read(playerProvider.notifier).playFile();
+              }),
+              _buildLibraryItem(
+                  'Local Videos', Icons.video_file_outlined, textGrey, () {
+                ref.read(videoPlayerProvider.notifier).playFile();
+              }),
+              const Divider(color: Colors.white10),
+              _buildPlaceholderContent(
+                  'Your library is growing', Icons.auto_awesome, textGrey),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLibraryItem(
+      String title, IconData icon, Color textGrey, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: textGrey),
+      title: Text(title, style: const TextStyle(color: Colors.white)),
+      trailing:
+          const Icon(Icons.arrow_forward_ios, color: Colors.white12, size: 16),
+      onTap: onTap,
+    );
+  }
+
+  Widget _buildDownloadsContent(
+      BuildContext context, WidgetRef ref, Color accentRed, Color textGrey) {
+    final downloadedFiles = ref.watch(appStateProvider).downloadedFiles;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('Downloads', accentRed),
+        const SizedBox(height: 20),
+        if (downloadedFiles.isEmpty)
+          Expanded(
+            child: _buildPlaceholderContent(
+                'No downloads yet', Icons.download_for_offline, textGrey),
+          )
+        else
+          Expanded(
+            child: ListView.builder(
+              itemCount: downloadedFiles.length,
+              itemBuilder: (context, index) {
+                final file = downloadedFiles[index];
+                final fileName = file.path.split(Platform.pathSeparator).last;
+                return ListTile(
+                  leading: Icon(
+                      fileName.endsWith('.mp4')
+                          ? Icons.videocam
+                          : Icons.music_note,
+                      color: textGrey),
+                  title: Text(fileName,
+                      style: const TextStyle(color: Colors.white)),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.play_circle_fill,
+                        color: Color(0xFFFF003C)),
+                    onPressed: () {
+                      if (fileName.endsWith('.mp4')) {
+                        ref
+                            .read(videoPlayerProvider.notifier)
+                            .playLocalVideo(file.path, fileName);
+                      } else {
+                        _playLocalFile(ref, file.path, fileName);
+                      }
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _playLocalFile(WidgetRef ref, String path, String title) async {
+    // For simplicity, reuse the playFile logic or direct player access
+    // But since we want the UI to update, we should ideally use the provider.
+    // The player_provider.playFile picks a file, but we already have the path.
+    // Let's assume we can play it directly via the player_provider's player.
+    // Actually, I'll add a playAtPath method to player_provider.
+    await ref.read(playerProvider.notifier).playLocalVideo(path, title);
   }
 
   Widget _buildPlaceholderContent(String title, IconData icon, Color textGrey) {
@@ -644,231 +852,233 @@ class MainScreen extends ConsumerWidget {
     Color accentRed,
     Color textGrey,
   ) {
-    final currentTrack = playerState.currentTrack;
+    final appState = ref.watch(appStateProvider);
+    final suggestions = appState.suggestedTracks;
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader('Recommended for you', accentRed),
+          const SizedBox(height: 20),
+          if (appState.isSearching)
+            const Center(
+                child: CircularProgressIndicator(color: Color(0xFFFF003C)))
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: suggestions.length,
+              itemBuilder: (context, index) {
+                final track = suggestions[index];
+                return _buildDynamicTrackItem(
+                    ref, track, index + 1, accentRed, textGrey);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNowPlayingSection(
+    BuildContext context,
+    WidgetRef ref,
+    VideoMetadata track,
+    Color accentRed,
+    Color textGrey,
+    bool isVideoMode,
+    VideoPlayerState videoState,
+    String selectedCategory,
+  ) {
+    final isCurrentVideo =
+        isVideoMode && videoState.currentVideo?.id == track.id;
+    // Show video only if it's the current video AND we're not in For You tab.
+    // If in For You, we show a "Watch" button to switch views.
+    final showVideo = isCurrentVideo && selectedCategory != 'For you';
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Featured Banner
+        _buildSectionHeader('Now Playing', accentRed),
+        const SizedBox(height: 20),
         Container(
-          height: 220,
+          height: 280,
           width: double.infinity,
           decoration: BoxDecoration(
+            color: Colors.black,
             borderRadius: BorderRadius.circular(20),
-            image: DecorationImage(
-              image: NetworkImage(
-                currentTrack?.thumbnailUrl ??
-                    'https://images.unsplash.com/photo-1496661415325-ef852f9e8e7c?q=80&w=2021&auto=format&fit=crop',
-              ),
-              fit: BoxFit.cover,
-            ),
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              gradient: LinearGradient(
-                colors: [
-                  Colors.black.withValues(alpha: 0.8),
-                  Colors.transparent,
-                ],
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
-              ),
-            ),
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  currentTrack?.title ?? 'Ready to Play',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+            image: showVideo
+                ? null
+                : DecorationImage(
+                    image: NetworkImage(track.thumbnailUrl),
+                    fit: BoxFit.cover,
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  currentTrack?.author ?? 'Search for music to start streaming',
-                  style: GoogleFonts.inter(color: textGrey),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.headphones, color: textGrey, size: 14),
-                    const SizedBox(width: 5),
-                    Text(
-                      'Ready to Stream',
-                      style: GoogleFonts.inter(color: textGrey, fontSize: 12),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Stack(
+              children: [
+                if (showVideo) Video(controller: videoState.controller),
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.black.withValues(alpha: 0.9),
+                        Colors.black.withValues(alpha: 0.4),
+                        Colors.transparent,
+                      ],
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
                     ),
-                    const SizedBox(width: 20),
-                    if (currentTrack != null)
-                      IconButton(
-                        icon: const Icon(Icons.download_rounded,
-                            color: Colors.white70, size: 20),
-                        onPressed: () {
-                          final downloadService = DownloadService();
-                          downloadService.downloadTrack(currentTrack);
-                        },
+                  ),
+                  padding: const EdgeInsets.all(30),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        track.title,
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                  ],
+                      const SizedBox(height: 8),
+                      Text(
+                        track.author,
+                        style: GoogleFonts.inter(
+                          color: Colors.white70,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              if (isVideoMode) {
+                                ref
+                                    .read(videoPlayerProvider.notifier)
+                                    .playVideo(track);
+                              } else {
+                                ref
+                                    .read(playerProvider.notifier)
+                                    .playYouTubeTrack(track);
+                              }
+                            },
+                            icon: Icon(isCurrentVideo
+                                ? (videoState.isPlaying
+                                    ? Icons.pause
+                                    : Icons.play_arrow)
+                                : Icons.play_arrow),
+                            label: Text(isCurrentVideo
+                                ? (videoState.isPlaying ? 'Pause' : 'Resume')
+                                : 'Play Now'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: accentRed,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 12),
+                            ),
+                          ),
+                          if (isVideoMode && selectedCategory == 'For you') ...[
+                            const SizedBox(width: 15),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                ref
+                                    .read(appStateProvider.notifier)
+                                    .setSelectedCategory('Stream');
+                                ref
+                                    .read(videoPlayerProvider.notifier)
+                                    .playVideo(track);
+                              },
+                              icon: const Icon(Icons.visibility, size: 18),
+                              label: const Text('Watch'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(color: Colors.white24),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(width: 15),
+                          IconButton(
+                            icon:
+                                const Icon(Icons.download, color: Colors.white),
+                            onPressed: () async {
+                              final settings = ref.read(settingsProvider);
+                              if (isVideoMode) {
+                                await DownloadService().downloadVideo(track,
+                                    customPath:
+                                        settings.downloadLocation.isEmpty
+                                            ? null
+                                            : settings.downloadLocation);
+                              } else {
+                                await DownloadService().downloadTrack(track,
+                                    customPath:
+                                        settings.downloadLocation.isEmpty
+                                            ? null
+                                            : settings.downloadLocation);
+                              }
+                              ref
+                                  .read(appStateProvider.notifier)
+                                  .refreshDownloadedFiles(
+                                      customPath:
+                                          settings.downloadLocation.isEmpty
+                                              ? null
+                                              : settings.downloadLocation);
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
         ),
-        const SizedBox(height: 30),
-
-        // Song List
-        Expanded(
-          child: Column(
-            children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 10,
-                  horizontal: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: bgDark,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 30,
-                      child: Text(
-                        'song',
-                        style: GoogleFonts.inter(
-                          color: textGrey,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 4,
-                      child: Text(
-                        'SONG',
-                        style: GoogleFonts.inter(
-                          color: textGrey,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        'ARTIST/ALBUM',
-                        style: GoogleFonts.inter(
-                          color: textGrey,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      'TIME',
-                      style: GoogleFonts.inter(
-                        color: textGrey,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              // List
-              Expanded(
-                child: ListView.builder(
-                  itemCount: 8,
-                  itemBuilder: (context, index) {
-                    final isSelected = index == 0;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 12,
-                        horizontal: 16,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? const Color(0xFF1E1E28)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                        border: isSelected
-                            ? Border.all(
-                                color: accentRed.withValues(alpha: 0.5))
-                            : null,
-                      ),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 30,
-                            child: Text(
-                              '${index + 1}',
-                              style: GoogleFonts.inter(color: textGrey),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 4,
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.favorite_border,
-                                  color: textGrey,
-                                  size: 16,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    isSelected
-                                        ? 'Farhat al amr'
-                                        : 'Song Title $index',
-                                    style: GoogleFonts.inter(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            flex: 3,
-                            child: Text(
-                              'Artist Name',
-                              style: GoogleFonts.inter(color: textGrey),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Text(
-                            '3:45',
-                            style: GoogleFonts.inter(color: textGrey),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-
-              // Waveform
-              SizedBox(
-                height: 40,
-                child: CustomPaint(
-                  painter: WaveformPainter(color: accentRed),
-                  child: Container(),
-                ),
-              ),
-            ],
-          ),
-        ),
       ],
+    );
+  }
+
+  Widget _buildDynamicTrackItem(
+    WidgetRef ref,
+    VideoMetadata track,
+    int index,
+    Color accentRed,
+    Color textGrey,
+  ) {
+    return ListTile(
+      leading: SizedBox(
+        width: 60,
+        child: Row(
+          children: [
+            Text('$index', style: TextStyle(color: textGrey, fontSize: 12)),
+            const SizedBox(width: 8),
+            const Icon(Icons.favorite_border, color: Colors.white24, size: 16),
+          ],
+        ),
+      ),
+      title: Text(track.title,
+          style: const TextStyle(
+              color: Colors.white, fontWeight: FontWeight.w500)),
+      subtitle:
+          Text(track.author, style: TextStyle(color: textGrey, fontSize: 12)),
+      trailing: Text(
+        '${track.duration.inMinutes}:${(track.duration.inSeconds % 60).toString().padLeft(2, '0')}',
+        style: TextStyle(color: textGrey, fontSize: 12),
+      ),
+      onTap: () => ref.read(playerProvider.notifier).playYouTubeTrack(track),
     );
   }
 
@@ -880,118 +1090,69 @@ class MainScreen extends ConsumerWidget {
     Color accentRed,
     Color textGrey,
   ) {
-    final videoState = ref.watch(videoPlayerProvider);
-
-    return Column(
-      children: [
-        // Video Player Container
-        Expanded(
-          flex: 2,
-          child: Container(
-            margin: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  blurRadius: 20,
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Stack(
-                children: [
-                  Video(controller: videoState.controller),
-                  if (videoState.isBuffering)
-                    const Center(
-                      child:
-                          CircularProgressIndicator(color: Color(0xFFFF003C)),
-                    ),
-                  if (videoState.currentVideo == null)
-                    Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.video_library, color: textGrey, size: 64),
-                          const SizedBox(height: 20),
-                          Text(
-                            'Search for a video to start watching',
-                            style: GoogleFonts.inter(color: textGrey),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-
-        // Video info
-        if (videoState.currentVideo != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        videoState.currentVideo!.title,
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        videoState.currentVideo!.author,
-                        style: GoogleFonts.inter(color: textGrey),
-                      ),
-                    ],
+    final appState = ref.watch(appStateProvider);
+    final suggestions = appState.suggestedTracks;
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader('Trending Videos', accentRed),
+          const SizedBox(height: 20),
+          if (appState.isSearching)
+            const Center(
+                child: CircularProgressIndicator(color: Color(0xFFFF003C)))
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: suggestions.length,
+              itemBuilder: (context, index) {
+                final track = suggestions[index];
+                return ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(track.thumbnailUrl,
+                        width: 100, height: 60, fit: BoxFit.cover),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.download_rounded,
-                      color: Colors.white70, size: 28),
-                  onPressed: () {
-                    final downloadService = DownloadService();
-                    downloadService.downloadVideo(videoState.currentVideo!);
-                  },
-                ),
-                IconButton(
-                  icon: Icon(
-                    videoState.isPlaying
-                        ? Icons.pause_circle
-                        : Icons.play_circle,
-                    color: accentRed,
-                    size: 48,
-                  ),
-                  onPressed: () =>
-                      ref.read(videoPlayerProvider.notifier).playOrPause(),
-                ),
-              ],
+                  title: Text(track.title,
+                      style: const TextStyle(color: Colors.white)),
+                  subtitle:
+                      Text(track.author, style: TextStyle(color: textGrey)),
+                  onTap: () =>
+                      ref.read(videoPlayerProvider.notifier).playVideo(track),
+                );
+              },
             ),
-          ),
-
-        const SizedBox(height: 20),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildPlayerBar(
     BuildContext context,
     WidgetRef ref,
-    PlayerStateModel playerState,
+    PlayerStateModel audioState,
     Color bgDark,
     Color accentRed,
     Color textGrey,
   ) {
+    final appState = ref.watch(appStateProvider);
+    final videoState = ref.watch(videoPlayerProvider);
+
+    final isVideoMode = appState.mode == AppMode.video;
+
+    final isPlaying = isVideoMode ? videoState.isPlaying : audioState.isPlaying;
+    final position = isVideoMode ? videoState.position : audioState.position;
+    final duration = isVideoMode ? videoState.duration : audioState.duration;
+    final volume = isVideoMode ? videoState.volume : audioState.volume;
+    final currentTrack =
+        isVideoMode ? videoState.currentVideo : audioState.currentTrack;
+
+    final title = currentTrack?.title ?? 'No Track Playing';
+    final author = currentTrack?.author ?? '';
+    final thumbnail = currentTrack?.thumbnailUrl ??
+        'https://images.unsplash.com/photo-1496661415325-ef852f9e8e7c?q=80&w=2021&auto=format&fit=crop';
+
     return Container(
       height: 80,
       decoration: BoxDecoration(
@@ -1007,10 +1168,7 @@ class MainScreen extends ConsumerWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(25),
               image: DecorationImage(
-                image: NetworkImage(
-                  playerState.currentTrack?.thumbnailUrl ??
-                      'https://images.unsplash.com/photo-1496661415325-ef852f9e8e7c?q=80&w=2021&auto=format&fit=crop',
-                ),
+                image: NetworkImage(thumbnail),
                 fit: BoxFit.cover,
               ),
             ),
@@ -1022,7 +1180,7 @@ class MainScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  playerState.currentTrack?.title ?? 'No Track Playing',
+                  title,
                   style: GoogleFonts.inter(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -1030,31 +1188,32 @@ class MainScreen extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  playerState.currentTrack?.author ?? '',
-                  style: GoogleFonts.inter(color: textGrey, fontSize: 12),
+                  author,
+                  style: GoogleFonts.inter(color: textGrey, fontSize: 11),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          if (playerState.currentTrack != null)
+          if (currentTrack != null)
             Consumer(
               builder: (context, ref, child) {
                 final favorites = ref.watch(fav.favoritesProvider);
-                final isFav =
-                    favorites.isFavorite(playerState.currentTrack!.id);
+                final isFav = favorites.isFavorite(currentTrack.id);
                 return IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                   icon: Icon(
                     isFav ? Icons.favorite : Icons.favorite_border,
                     color: isFav ? accentRed : textGrey,
-                    size: 20,
+                    size: 18,
                   ),
                   onPressed: () {
                     final track = fav.Track(
-                      id: playerState.currentTrack!.id,
-                      title: playerState.currentTrack!.title,
-                      artist: playerState.currentTrack!.author,
-                      albumArt: playerState.currentTrack!.thumbnailUrl,
+                      id: currentTrack.id,
+                      title: currentTrack.title,
+                      artist: currentTrack.author,
+                      albumArt: currentTrack.thumbnailUrl,
                     );
                     ref
                         .read(fav.favoritesProvider.notifier)
@@ -1063,14 +1222,78 @@ class MainScreen extends ConsumerWidget {
                 );
               },
             ),
-          const SizedBox(width: 20),
-          Icon(Icons.headphones, color: textGrey, size: 20),
-          const SizedBox(width: 20),
-          const Icon(Icons.skip_previous, color: Colors.white),
-          const SizedBox(width: 20),
+          const SizedBox(width: 10),
+          // Progress & Seek
+          Expanded(
+            flex: 4,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _formatDuration(position),
+                      style: GoogleFonts.inter(color: textGrey, fontSize: 10),
+                    ),
+                    Text(
+                      _formatDuration(duration),
+                      style: GoogleFonts.inter(color: textGrey, fontSize: 10),
+                    ),
+                  ],
+                ),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 2,
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape:
+                        const RoundSliderOverlayShape(overlayRadius: 14),
+                    activeTrackColor: accentRed,
+                    inactiveTrackColor: textGrey.withValues(alpha: 0.3),
+                    thumbColor: Colors.white,
+                  ),
+                  child: Slider(
+                    value: position.inSeconds.toDouble(),
+                    max: duration.inSeconds.toDouble() > 0
+                        ? duration.inSeconds.toDouble()
+                        : 0.0,
+                    onChanged: (value) {
+                      if (isVideoMode) {
+                        ref
+                            .read(videoPlayerProvider.notifier)
+                            .seek(Duration(seconds: value.toInt()));
+                      } else {
+                        ref
+                            .read(playerProvider.notifier)
+                            .seek(Duration(seconds: value.toInt()));
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          IconButton(
+            icon: const Icon(Icons.skip_previous, color: Colors.white),
+            onPressed: () {
+              if (isVideoMode) {
+                // Video skip previous?
+                ref.read(videoPlayerProvider.notifier).seek(Duration.zero);
+              } else {
+                ref.read(playerProvider.notifier).skipPrevious();
+              }
+            },
+          ),
+          const SizedBox(width: 10),
           InkWell(
             onTap: () {
-              ref.read(playerProvider.notifier).playOrPause();
+              if (isVideoMode) {
+                ref.read(videoPlayerProvider.notifier).playOrPause();
+              } else {
+                ref.read(playerProvider.notifier).playOrPause();
+              }
             },
             child: Container(
               height: 40,
@@ -1086,20 +1309,27 @@ class MainScreen extends ConsumerWidget {
                 ],
               ),
               child: Icon(
-                playerState.isPlaying ? Icons.pause : Icons.play_arrow,
+                isPlaying ? Icons.pause : Icons.play_arrow,
                 color: Colors.white,
+                size: 20,
               ),
             ),
           ),
-          const SizedBox(width: 20),
-          IconButton(
-            icon: const Icon(Icons.skip_next, color: Colors.white),
-            onPressed: () => ref.read(playerProvider.notifier).skipNext(),
-          ),
-          const SizedBox(width: 20),
-          Icon(Icons.shuffle, color: textGrey, size: 20),
           const SizedBox(width: 10),
-          Icon(Icons.tune, color: textGrey, size: 20),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: const Icon(Icons.skip_next, color: Colors.white, size: 24),
+            onPressed: () {
+              if (!isVideoMode) {
+                ref.read(playerProvider.notifier).skipNext();
+              }
+            },
+          ),
+          const SizedBox(width: 10),
+          Icon(Icons.shuffle, color: textGrey, size: 16),
+          const SizedBox(width: 8),
+          Icon(Icons.tune, color: textGrey, size: 16),
           const Spacer(),
           Icon(Icons.volume_up, color: textGrey),
           const SizedBox(width: 8),
@@ -1115,17 +1345,21 @@ class MainScreen extends ConsumerWidget {
                 thumbColor: Colors.white,
               ),
               child: Slider(
-                value: playerState.volume,
+                value: volume,
                 min: 0,
                 max: 100,
                 onChanged: (value) {
-                  ref.read(playerProvider.notifier).setVolume(value);
+                  if (isVideoMode) {
+                    ref.read(videoPlayerProvider.notifier).setVolume(value);
+                  } else {
+                    ref.read(playerProvider.notifier).setVolume(value);
+                  }
                 },
               ),
             ),
           ),
-          const SizedBox(width: 20),
-          Icon(Icons.more_horiz, color: textGrey),
+          const SizedBox(width: 10),
+          Icon(Icons.more_horiz, color: textGrey, size: 20),
         ],
       ),
     );
@@ -1184,23 +1418,30 @@ class MainScreen extends ConsumerWidget {
   }
 
   Widget _buildAvatarRow(int count, int startIndex) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: List.generate(
-          count,
-          (index) => Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: CircleAvatar(
-              radius: 18,
-              backgroundImage: NetworkImage(
-                'https://i.pravatar.cc/150?img=${startIndex + index}',
-              ),
+    return Row(
+      children: List.generate(
+        count,
+        (index) => Padding(
+          padding: const EdgeInsets.only(right: 8.0),
+          child: CircleAvatar(
+            radius: 12,
+            backgroundImage: NetworkImage(
+              'https://i.pravatar.cc/150?u=${startIndex + index}',
             ),
           ),
         ),
       ),
     );
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, "0");
+    String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
+    String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
+    if (duration.inHours > 0) {
+      return "${twoDigits(duration.inHours)}:$twoDigitMinutes:$twoDigitSeconds";
+    }
+    return "$twoDigitMinutes:$twoDigitSeconds";
   }
 }
 
